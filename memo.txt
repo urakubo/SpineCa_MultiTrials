@@ -1,0 +1,5 @@
+VAR=7/170619_1716
+nkf -Lu ./Morph/${VAR}.inp > ./Morph/${VAR}_nkf-Lu.inp
+sed -e 's/S3R/STRI3/' ./Morph/${VAR}_nkf-Lu.inp  > ./Morph/${VAR}_nkf-Lu_STRI3.inp
+mkdir Data1/{1..37}
+mkdir Data2/{1..37}

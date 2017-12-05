@@ -1,0 +1,185 @@
+##
+## python -i main170622_plot.py
+##
+from sub171111 import *
+import math
+import sys
+import numpy as np
+from itertools import count
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
+import steps
+import steps.model as smod
+import steps.utilities.meshio as smeshio
+import steps.geom as sgeom
+
+import steps.solver as ssolv
+import steps.rng as srng
+import time
+
+#
+# python -i main_plot.py
+#
+    
+def getVol(targ_mesh, ID):
+    Vol = 0.0
+    for i in ID:
+        Vol = Vol + targ_mesh.getTetVol(i)
+    return Vol
+
+
+def MolTimeDev2(fname, tnum, ID):
+    Mol = []
+    for j in range(tnum):
+        ffname = fname % j
+        tmp = sum( np.load(ffname)[ID] )
+        Mol.append( tmp.tolist() )
+    Mol = np.array( Mol )
+    return Mol
+
+
+##
+##
+def integConc( i, TargDIR ):
+##
+##
+    p   = parameters( i  )
+    i_str = '%s' % i
+    p.DIRECTORY = TargDIR + '/' +i_str
+    print p.DIRECTORY
+    g   = gen_geom(p)
+    Targ = './Morph/' + p.MorphID
+
+    tpnts = np.arange(0.0, p.INT, p.DT)
+    tpnts = tpnts - tpnts[50]
+    tnum  = len( tpnts )
+
+    ##
+    ## Load geometry
+    ##
+    Head_ID   = np.loadtxt(Targ+'Head_ID.dat') - 1
+    Neck_ID   = np.loadtxt(Targ+'Neck_ID.dat') - 1
+    Dend_ID   = np.loadtxt(Targ+'Dendrite_ID.dat') - 1
+
+    Head_ID = Head_ID.astype(np.int)
+    Neck_ID = Neck_ID.astype(np.int)
+    Dend_ID = Dend_ID.astype(np.int)
+
+    ##
+    ## Obtain volumes (in m3)
+    ##
+    Head_Vol = getVol(g.mesh, Head_ID)
+    Neck_Vol = getVol(g.mesh, Neck_ID)
+    Dend_Vol = getVol(g.mesh, Dend_ID)
+
+    print 'Head Vol in m3: ' +  str(Head_Vol)
+    print 'Neck Vol in m3: ' +  str(Neck_Vol)
+    print 'Neck Vol in m3: ' +  str(Dend_Vol)
+
+    ##
+    ## Time development of Ca
+    ##
+
+    ffname = p.DIRECTORY + "/Ca_%03i.npy"
+    Ca_Head = MolTimeDev2(ffname, tnum, Head_ID)
+    Ca_Neck = MolTimeDev2(ffname, tnum, Neck_ID)
+    Ca_Dend = MolTimeDev2(ffname, tnum, Dend_ID)
+    Ca_Tot  = Ca_Head + Ca_Neck
+
+    ##
+    ## Time development of Ca/CaM
+    ##
+
+    CaM_Head = np.zeros( Ca_Head.shape ) # zeros_like(Ca_Head)
+    CaM_Neck = np.zeros( Ca_Neck.shape )
+    CaM_Dend = np.zeros( Ca_Dend.shape )
+    CaM_Tot  = np.zeros( Ca_Tot.shape )
+    CaM = ['N0C1','N0C2','N1C0','N1C1','N1C2','N2C0','N2C1','N2C2']
+    for T_CaM in CaM:
+        ffname = p.DIRECTORY + "/"+ T_CaM + "_%03i.npy"
+        CaM_Head = CaM_Head + MolTimeDev2(ffname, tnum, Head_ID)
+        CaM_Neck = CaM_Neck + MolTimeDev2(ffname, tnum, Neck_ID)
+        CaM_Dend = CaM_Dend + MolTimeDev2(ffname, tnum, Dend_ID)
+
+    CaM_Tot  = CaM_Head + CaM_Neck
+
+    ##
+    ## Plot of time developments (Head/Neck/Dend) 
+    ##
+
+    Ca_Head_C = Ca_Head/Head_Vol/(6.02e20)
+    Ca_Neck_C = Ca_Neck/Neck_Vol/(6.02e20)
+    Ca_Dend_C = Ca_Dend/Dend_Vol/(6.02e20)
+    Ca_Tot_C  = Ca_Tot/(Head_Vol + Dend_Vol)/(6.02e20)
+
+    CaM_Head_C = CaM_Head/Head_Vol/(6.02e20)
+    CaM_Neck_C = CaM_Neck/Neck_Vol/(6.02e20)
+    CaM_Dend_C = CaM_Dend/Dend_Vol/(6.02e20)
+    CaM_Tot_C  = CaM_Tot/(Head_Vol + Dend_Vol)/(6.02e20)
+
+    ##
+    ## Temporal Integration
+    ##
+    Ca_Head_C = p.DT * np.sum( Ca_Head_C )
+    Ca_Neck_C = p.DT * np.sum( Ca_Neck_C )
+    Ca_Dend_C = p.DT * np.sum( Ca_Dend_C )
+    Ca_Tot_C  = p.DT * np.sum( Ca_Tot_C  )
+
+    CaM_Head_C = p.DT * np.sum( CaM_Head_C )
+    CaM_Neck_C = p.DT * np.sum( CaM_Neck_C )
+    CaM_Dend_C = p.DT * np.sum( CaM_Dend_C )
+    CaM_Tot_C  = p.DT * np.sum( CaM_Tot_C )
+
+    return Ca_Head_C, Ca_Neck_C, Ca_Tot_C, CaM_Head_C, CaM_Neck_C, CaM_Tot_C
+
+##
+##
+##
+
+##
+##
+##
+class Post3_integCa():
+    ##
+    ##
+    def __init__(self, TargDIR):
+    ##
+    ##
+        p   = parameters( 0 )
+        NUM = p.IDs
+        print 'NUM: ', NUM
+        col = np.linspace(0,1,num= len(NUM) )
+    ##
+    ##
+        Ca_Head  = []
+        Ca_Neck  = []
+        Ca_Tot   = []
+        CaM_Head = []
+        CaM_Neck = []
+        CaM_Tot  = []
+        for i in NUM:
+            Ca_Head_C, Ca_Neck_C, Ca_Tot_C, CaM_Head_C, CaM_Neck_C, CaM_Tot_C = integConc( i, TargDIR ) 
+            Ca_Head.append( Ca_Head_C )
+            Ca_Neck.append( Ca_Neck_C )
+            Ca_Tot.append( Ca_Tot_C )
+            CaM_Head.append( CaM_Head_C )
+            CaM_Neck.append( CaM_Neck_C )
+            CaM_Tot.append( CaM_Tot_C )
+
+        ffname1 = TargDIR+ "/Ca_head.npy"
+        ffname2 = TargDIR+ "/Ca_Neck.npy"
+        ffname3 = TargDIR+ "/Ca_Tot.npy"
+        ffname4 = TargDIR+ "/CaM_head.npy"
+        ffname5 = TargDIR+ "/CaM_Neck.npy"
+        ffname6 = TargDIR+ "/CaM_Tot.npy"
+
+        np.save( ffname1, Ca_Head )
+        np.save( ffname2, Ca_Neck )
+        np.save( ffname3, Ca_Tot )
+        np.save( ffname4, CaM_Head )
+        np.save( ffname5, CaM_Neck )
+        np.save( ffname6, CaM_Tot )
+##
+##
+##
